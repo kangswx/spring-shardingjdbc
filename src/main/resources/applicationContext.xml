@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:sharding="http://shardingsphere.apache.org/schema/shardingsphere/sharding"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://shardingsphere.apache.org/schema/shardingsphere/encrypt http://shardingsphere.apache.org/schema/shardingsphere/encrypt/encrypt.xsd http://shardingsphere.apache.org/schema/shardingsphere/sharding http://shardingsphere.apache.org/schema/shardingsphere/sharding/sharding.xsd">
+
+    <!--数据库0-->
+    <bean id="ds0" class="com.zaxxer.hikari.HikariDataSource">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+        <property name="jdbcUrl" value="jdbc:mysql://192.168.18.179:3306/mall_0?useSSL=false"/>
+        <property name="username" value="root"/>
+        <property name="password" value="root"/>
+    </bean>
+
+    <!--数据库1-->
+    <bean id="ds1" class="com.zaxxer.hikari.HikariDataSource">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+        <property name="jdbcUrl" value="jdbc:mysql://192.168.18.180:3306/mall_1?useSSL=false"/>
+        <property name="username" value="root"/>
+        <property name="password" value="root"/>
+    </bean>
+
+    <!-- 数据的分库策略
+     sharding-column  基于user_id进行分库
+     如果user_id对2取余为0则将数据存放在ds0数据库
+     如果user_id对2取余为1则将数据存放在ds1数据库
+     -->
+    <sharding:inline-strategy id="databaceStrategy" sharding-column="user_id"
+                              algorithm-expression="ds$->{user_id % 2}"/>
+
+    <!-- 数据的分表策略
+    sharding-column  基于order_id进行分表
+    如果order_id对2取余为0则将数据存放在t_order_0表中
+    如果order_id对2取余为1则将数据存放在t_order_1表中
+    -->
+    <sharding:inline-strategy id="orderTableStrategy" sharding-column="order_id"
+                              algorithm-expression="t_order_$->{order_id % 2}"/>
+
+    <!-- 分布式主键生成策略(雪花算法) -->
+    <sharding:key-generator id="orderKeyGenerator" type="SNOWFLAKE" column="order_id"/>
+
+    <!-- 分片数据源，对JDBC进行了扩展和增强 -->
+    <sharding:data-source id="shardingDataSource">
+        <!-- sharding-rule  定义分库分表规则
+            data-source-names="ds0,ds1"  说明有几个数据源
+            sharding:table-rules  定义数据存储规则
+            logic-table="t_order"  代表逻辑表名
+            actual-data-nodes说明数据存放在ds0和ds1的t_order_0和t_order_1四张表中
+            database-strategy-ref  数据的分库策略
+            table-strategy-ref  数据的分表策略
+
+            order_id     user_id
+            1            2           ds0.t_order_1
+            2            2           ds0.t_order_0
+            3            1           ds1.t_order_1
+            4            1           ds1.t_order_0
+        -->
+        <sharding:sharding-rule data-source-names="ds0,ds1"> <!-- 通知shardingJDBC一共有两个数据源 -->
+            <sharding:table-rules>
+                <sharding:table-rule logic-table="t_order"
+                    actual-data-nodes="ds$->{0..1}.t_order_$->{0..1}"
+                                     database-strategy-ref="databaceStrategy"
+                                     table-strategy-ref="orderTableStrategy"
+                                     key-generator-ref="orderKeyGenerator"
+                />
+            </sharding:table-rules>
+        </sharding:sharding-rule>
+    </sharding:data-source>
+</beans>
